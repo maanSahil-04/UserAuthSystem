@@ -8,7 +8,10 @@ export async function sendOtpEmail({ to, otp }) {
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS
-    }
+    },
+    tls: {
+    rejectUnauthorized: false, // ✅ fix self-signed certificate error
+  },
   });
 
   const info = await transporter.sendMail({

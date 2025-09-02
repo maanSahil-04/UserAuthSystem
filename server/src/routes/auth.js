@@ -5,6 +5,7 @@ import User from "../models/User.js";
 import { sendOtpEmail } from "../utils/sendOtp.js";
 
 const router = express.Router();
+
 const OTP_WINDOW_MIN = 10;
 
 function genOtp() {
@@ -15,23 +16,43 @@ function genOtp() {
 router.post("/register", async (req, res) => {
   try {
     const { email, name, password } = req.body;
-    if (!email || !name || !password) return res.status(400).json({ message: "Missing fields" });
+    console.log("📩 Incoming registration request:", req.body);
+    if (!email || !name || !password) {
+      console.log("❌ Missing email or password");
+      return res.status(400).json({ message: "Missing fields" });
+    }
 
-    const exists = await User.findOne({ email });
-    if (exists) return res.status(409).json({ message: "Email already registered" });
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      console.log("❌ User already exists:", email);
+      return res.status(409).json({ message: "Email already registered" });
+    }
 
     const passwordHash = await bcrypt.hash(password, 10);
+   
+    
     const otp = genOtp();
+     console.log("🔑 Generated OTP:", otp);
     const otpExpiresAt = new Date(Date.now() + OTP_WINDOW_MIN * 60 * 1000);
 
-    const user = await User.create({ email, name, passwordHash, otpCode: otp, otpExpiresAt, isVerified: false });
+    const user = await User.create({
+      email,
+      name,
+      passwordHash,
+      otpCode: otp,
+      otpExpiresAt,
+      isVerified: false,
+    });
+     await user.save();
+    console.log("✅ User saved:", user.email);
 
     await sendOtpEmail({ to: email, otp });
+    console.log("📧 OTP sent to:", email);
 
     return res.status(201).json({ message: "Registered. OTP sent to email.", userId: user._id });
   } catch (e) {
     console.error(e);
-    return res.status(500).json({ message: "Server error" });
+      return res.status(500).json({ message: "Registration failed" });
   }
 });
 
@@ -71,17 +92,16 @@ router.post("/login", async (req, res) => {
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) return res.status(401).json({ message: "Invalid credentials" });
 
-    const token = jwt.sign({ id: user._id, email: user.email }, process.env.JWT_SECRET, { expiresIn: "2h" });
+    const token = jwt.sign(
+      { id: user._id, email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: "2h" }
+    );
     return res.json({ token, user: { id: user._id, name: user.name, email: user.email } });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ message: "Server error" });
   }
-});
-
-// GET /auth/me (protected)
-router.get("/me", async (req, res) => {
-  res.status(404).json({ message: "Use /me on app root with middleware. This route is placeholder." });
 });
 
 export default router;
